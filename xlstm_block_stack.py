@@ -29,7 +29,7 @@ class xLSTMBlockStackConfig:
     # Indexing starts from 0.
     slstm_at: Union[list[int], Literal["all"]] = field(default_factory=lambda:[1] )
 
-    #  RetNet 的位置
+  
     retnet_at: list[int] = field(default_factory=list)
     # _block_map is a string that specifies which block is used at which position
     # 0: use the mLSTM block
@@ -46,9 +46,9 @@ class xLSTMBlockStackConfig:
         for idx in self.slstm_at:
             assert idx < self.num_blocks
             block_map[idx] = 1
-        for idx in self.retnet_at:  # ★ 新增
+        for idx in self.retnet_at:  
             assert idx < self.num_blocks
-            block_map[idx] = 2  # RetNet
+            block_map[idx] = 2  
         return ",".join(map(str, block_map))
 
     def __post_init__(self):
@@ -72,7 +72,7 @@ class xLSTMBlockStackConfig:
             self.slstm_block.slstm.embedding_dim = self.embedding_dim
             self.slstm_block._num_blocks = self.num_blocks
             self.slstm_block.__post_init__()
-            # ========== RetNet 配置同步 ==========
+           
         if self.retnet_block is not None:
             self.retnet_block.embedding_dim = self.embedding_dim
             self.retnet_block._num_blocks = self.num_blocks
@@ -80,17 +80,17 @@ class xLSTMBlockStackConfig:
             if self.retnet_block is not None:
                 self.retnet_block.embedding_dim = self.embedding_dim
 
-                # 强制校验必需参数
+                
                 assert hasattr(self.retnet_block, 'heads') and self.retnet_block.heads is not None
                 assert hasattr(self.retnet_block, 'layers') and self.retnet_block.layers > 0
                 assert self.embedding_dim % self.retnet_block.heads == 0
 
-            # ★ 校验：layers 合法（至少1层）
+           
             if hasattr(self.retnet_block, "layers"):
                 assert self.retnet_block.layers > 0, \
                     "RetNetBlockConfig.layers 必须 >= 1"
 
-            # 如果需要，可以在这里继续调用 __post_init__（如果 RetNetBlockConfig 有）
+          
             if hasattr(self.retnet_block, "__post_init__"):
                 self.retnet_block.__post_init__()
         self._block_map = self._create_block_map()
@@ -110,7 +110,7 @@ class xLSTMBlockStack(nn.Module):
             self.post_blocks_norm = nn.Identity()
 
     def _create_blocks(self, config: xLSTMBlockStackConfig):
-        #根据数量创建slstm与mlstm
+        
         blocks = []
         for block_idx, block_type_int in enumerate(config.block_map):
             if block_type_int == 0:
@@ -125,7 +125,7 @@ class xLSTMBlockStack(nn.Module):
                     config._block_idx = block_idx
                     config.__post_init__()
                 blocks.append(sLSTMBlock(config=config))
-            elif block_type_int == 2:  # ★ 新增
+            elif block_type_int == 2: 
                 cfg = deepcopy(self.config.retnet_block)
                 if hasattr(cfg, "_block_idx"):
                     cfg._block_idx = block_idx
@@ -135,7 +135,7 @@ class xLSTMBlockStack(nn.Module):
 
         return nn.ModuleList(blocks)
 
-    def reset_parameters(self) -> None:#重置参数
+    def reset_parameters(self) -> None:
         for block in self.blocks:
             block.reset_parameters()
         if not isinstance(self.post_blocks_norm, nn.Identity):
