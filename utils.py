@@ -1,23 +1,4 @@
-# coding=utf-8
-# Copyright 2021, Duong Nguyen
-#
-# Licensed under the CECILL-C License;
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.cecill.info
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
-"""Utility functions for GPTrajectory.
-
-References:
-    https://github.com/karpathy/minGPT
-"""
 from __future__ import annotations
 import numpy as np
 import os
@@ -42,7 +23,7 @@ from torch import nn
 torch.pi = torch.acos(torch.zeros(1)).item() * 2
 
 
-# 设置随机种子：set_seed,确保训练结果可复现。
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -51,7 +32,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def new_log(logdir, filename):  # 用于设置日志记录的函数
+def new_log(logdir, filename):
     """Defines logging format.
     """
     filename = os.path.join(logdir,
@@ -68,7 +49,7 @@ def new_log(logdir, filename):  # 用于设置日志记录的函数
     logging.getLogger('').addHandler(console)
 
 
-# 该函数计算两个地理坐标之间的 Haversine 距离
+
 def haversine(input_coords,
               pred_coords):
     """ Calculate the haversine distances between input_coords and pred_coords.
@@ -91,7 +72,7 @@ def haversine(input_coords,
 
 
 
-# 保留 logits 中 top-k 最大值，其余全部设为 -inf
+
 def top_k_logits(logits, k):
     v, ix = torch.topk(logits, k)
     out = logits.clone()
@@ -101,7 +82,7 @@ def top_k_logits(logits, k):
 
 def top_k_nearest_idx(att_logits, att_idxs, r_vicinity):
     """Keep only k values nearest the current idx.
-    #函数通过控制索引范围，保留与当前索引最近的值，通常用于注意力机制中，确保模型在计算注意力时只关注周围的部分信息
+    
     Args:
         att_logits: a Tensor of shape (bachsize, data_size).
         att_idxs: a Tensor of shape (bachsize, 1), indicates
