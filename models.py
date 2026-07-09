@@ -20,7 +20,7 @@ class xLSTMShipTrajectory(nn.Module):
         super().__init__()
 
 
-        self.lat_size = config.lat_size  # 把所有与纬度、经度、速度、航向有关的维度大小、嵌入大小保存为成员变量，方便后面调用
+        self.lat_size = config.lat_size  
         self.lon_size = config.lon_size
         self.sog_size = config.sog_size
         self.cog_size = config.cog_size
@@ -36,10 +36,10 @@ class xLSTMShipTrajectory(nn.Module):
             "emb_sizes",
             torch.tensor([config.n_lat_embd, config.n_lon_embd, config.n_sog_embd, config.n_cog_embd]))
 
-        if hasattr(config, "partition_mode"):  # 采用哪种方式进行 离散化（索引化）
-            self.partition_mode = config.partition_mode  # 基于数据密度进行非均匀划分（
+        if hasattr(config, "partition_mode"):  
+            self.partition_mode = config.partition_mode  
         else:
-            self.partition_mode = "uniform"  # 均匀划分格子
+            self.partition_mode = "uniform"  
         self.partition_model = partition_model
         if hasattr(config, "blur"):
             self.blur = config.blur
@@ -53,9 +53,9 @@ class xLSTMShipTrajectory(nn.Module):
                         params.requires_grad = False
                         params.fill_(1 / 3)
             else:
-                self.blur_module = None  # 【修改】禁用时设为 None
+                self.blur_module = None  
         else:
-            # 【新增】如果 config 中没有 blur 配置，默认禁用
+            
             self.blur = False
             self.blur_module = None
 
@@ -92,34 +92,33 @@ class xLSTMShipTrajectory(nn.Module):
             num_blocks=config.depth,
             embedding_dim=config.n_embd,
             dropout=config.dropout,
-            slstm_at=[1],  # 指定哪些层是 sLSTM，其他默认是 mLSTM
-            mlstm_block=config.mlstm_block_cfg,  # 假设你提前创建好了
-            slstm_block=config.slstm_block_cfg,  # 同上
+            slstm_at=[1],  
+            mlstm_block=config.mlstm_block_cfg,  
+            slstm_block=config.slstm_block_cfg,  
         )
 
-        # 替换原有 transformer/mamba block
+ 
         self.blocks = xLSTMBlockStack(config=xlstm_config)
 
         # decoder head
-        self.ln_f = nn.LayerNorm(config.n_embd)  # 对 Transformer Block 输出的每个 token 向量进行归一化，增强模型稳定性
+        self.ln_f = nn.LayerNorm(config.n_embd) 
         if self.mode in ("mlp_pos", "mlp"):
-            self.head = nn.Linear(config.n_embd, config.n_embd, bias=False)  # 可能作为特征表示再做别的任务
+            self.head = nn.Linear(config.n_embd, config.n_embd, bias=False)  
         else:
             self.head = nn.Linear(config.n_embd, self.full_size,
-                                  bias=False)  # Classification head#直接输出每一类的 logits，用于分类预测
+                                  bias=False) 
 
         self.max_seqlen = config.max_seqlen
-        self.apply(self._init_weights)  # 调用自定义的初始化函数，对所有模块（Embedding、Linear）进行初始化。
-
+        self.apply(self._init_weights) 
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
 
-         # ======== 新增：KL 正则相关参数 ========
+  
 
-        self.kl_lambda = getattr(config, "kl_lambda", 1.0)  # KL 正则权重，可在 config 文件中调整
-        self.kl_sigma_lat = getattr(config, "kl_sigma_lat", 2.5)  # 纬度高斯邻域标准差
-        self.kl_sigma_lon = getattr(config, "kl_sigma_lon", 2.5)  # 经度高斯邻域标准差
-        self.kl_sigma_sog = getattr(config, "kl_sigma_sog", 2.0)  # 航速高斯邻域标准差
-        self.kl_sigma_cog = getattr(config, "kl_sigma_cog", 2.0)  # 航向高斯邻域标准差
+        self.kl_lambda = getattr(config, "kl_lambda", 1.0) 
+        self.kl_sigma_lat = getattr(config, "kl_sigma_lat", 2.5)
+        self.kl_sigma_lon = getattr(config, "kl_sigma_lon", 2.5)  
+        self.kl_sigma_sog = getattr(config, "kl_sigma_sog", 2.0)  
+        self.kl_sigma_cog = getattr(config, "kl_sigma_cog", 2.0)  
 
     def get_max_seqlen(self):
         return self.max_seqlen
@@ -195,26 +194,24 @@ class xLSTMShipTrajectory(nn.Module):
         cog_embeddings = self.cog_emb(inputs[:, :, 3])
         token_embeddings = torch.cat((lat_embeddings, lon_embeddings, sog_embeddings, cog_embeddings), dim=-1)
 
-        # 加入位置编码 + dropout
+ 
         position_embeddings = self.pos_emb[:, :seqlen, :]
         hidden_states = self.drop(token_embeddings + position_embeddings)
 
-        # 使用 xLSTMBlockStack 进行前向传播
+     
         hidden_states = self.blocks(hidden_states)
 
-        # 后归一化（可选）
-        hidden_states = self.ln_f(hidden_states)  # 如果你之前叫 norm_f，这里可改为 self.norm_f
+   
+        hidden_states = self.ln_f(hidden_states)
 
-        # 预测输出
+
         logits = self.head(hidden_states)
 
         lat_logits, lon_logits, sog_logits, cog_logits = \
             torch.split(logits, (self.lat_size, self.lon_size, self.sog_size, self.cog_size), dim=-1)
-        # =============================
-        # Calculate the loss (含 KL 正则)
-        # =============================
+  
         loss = None
-        loss_tuple = None  # 代码计算了模型输出与目标标签之间的 交叉熵损失，包括纬度、经度、速度和航向的损失。
+        loss_tuple = None  
         if targets is not None:
             sog_loss = F.cross_entropy(sog_logits.view(-1, self.sog_size),
                                        targets[:, :, 2].view(-1),
@@ -229,7 +226,7 @@ class xLSTMShipTrajectory(nn.Module):
                                        targets[:, :, 1].view(-1),
                                        reduction="none").view(batchsize, seqlen)
 
-            # 【修改】只有当 blur 为 True 时才执行 Blur 相关代码
+         
             if self.blur and self.blur_module is not None:
                 lat_probs = F.softmax(lat_logits, dim=-1)
                 lon_probs = F.softmax(lon_logits, dim=-1)
@@ -269,36 +266,36 @@ class xLSTMShipTrajectory(nn.Module):
                     sog_probs = blurred_sog_probs
                     cog_probs = blurred_cog_probs
 
-            # ========= KL 散度正则项 =========
+ 
             def gaussian_target(target_idx, size, sigma=2.0):
-                """生成以目标类别为中心的高斯邻域分布"""
+         
                 idxs = torch.arange(size, device=target_idx.device).float().view(1, 1, -1)
                 target = target_idx.unsqueeze(-1).float()
                 gauss = torch.exp(-0.5 * ((idxs - target) / sigma) ** 2)
-                gauss = gauss + 1e-10  # 防止 log(0)
+                gauss = gauss + 1e-10 
                 gauss = gauss / gauss.sum(dim=-1, keepdim=True)
                 return gauss
 
-            # 【修改】使用 log_softmax 而不是 softmax().log()
+       
             lat_log_probs = F.log_softmax(lat_logits, dim=-1)
             lon_log_probs = F.log_softmax(lon_logits, dim=-1)
             sog_log_probs = F.log_softmax(sog_logits, dim=-1)
             cog_log_probs = F.log_softmax(cog_logits, dim=-1)
 
-            # 生成高斯目标
+ 
             lat_gauss = gaussian_target(targets[:, :, 0], self.lat_size, sigma=self.kl_sigma_lat)
             lon_gauss = gaussian_target(targets[:, :, 1], self.lon_size, sigma=self.kl_sigma_lon)
             sog_gauss = gaussian_target(targets[:, :, 2], self.sog_size, sigma=self.kl_sigma_sog)
             cog_gauss = gaussian_target(targets[:, :, 3], self.cog_size, sigma=self.kl_sigma_cog)
 
-            # KL 散度
+       
             kl_lat = F.kl_div(lat_log_probs, lat_gauss, reduction="none").sum(dim=-1)
             kl_lon = F.kl_div(lon_log_probs, lon_gauss, reduction="none").sum(dim=-1)
             kl_sog = F.kl_div(sog_log_probs, sog_gauss, reduction="none").sum(dim=-1)
             kl_cog = F.kl_div(cog_log_probs, cog_gauss, reduction="none").sum(dim=-1)
             kl_loss = (kl_lat + kl_lon + kl_sog + kl_cog) / 4.0  # (B, T)
 
-            # ========= 融合损失 =========
+      
             loss_tuple = (lat_loss, lon_loss, sog_loss, cog_loss)
             ce_loss = sum(loss_tuple)
 
@@ -309,7 +306,7 @@ class xLSTMShipTrajectory(nn.Module):
             ce_loss = ce_loss.mean()
             kl_loss = kl_loss.mean()
 
-            # 融合 KL 正则
+    
             loss = ce_loss + self.kl_lambda * kl_loss
 
         if return_loss_tuple:
